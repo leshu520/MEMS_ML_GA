@@ -1,2 +1,2 @@
-# Before run the code
-1. Prepare for the Python environment, please check on this website https://nl.mathworks.com/help/matlab/matlab_external/install-supported-python-implementation.html#buialof-39
+# NOTICE! 
+1. The Python from Microsoft Store doesn't actually works. You should download from Python official website. 
