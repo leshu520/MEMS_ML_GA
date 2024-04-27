@@ -24,6 +24,12 @@ class ACC_ComsolInterface:
     
     def set_parameter(self, name, value):
         self.model.parameter(name=name, value=value) # Set the parameter of the model, name is the name of the parameter, value is the value of the parameter
-        print(self.model.parameters())
         self.model.build()  # Build the model after setting the parameter
+        return self.model
+    
+    def update(self, solution): # update the model with the solution, specifically the height, thickness and width of the beam
+        self.set_parameter('H', solution[0])
+        self.set_parameter('Thickn', solution[1])
+        self.set_parameter('W', solution[2])
+        print(self.model.parameters())
         return self.model
