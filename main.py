@@ -5,19 +5,23 @@ import json
 import logging 
 
 # The section below is the definition of the optimization problem
-CPU_count = 20
-num_generations = 100
-num_parents_mating = 12
+CPU_count = 24
+num_generations = 50
+num_parents_mating = 20
+mutation_num_genes = 0
+crossover_type = "single_point" # single_point, two_points, uniform, scattered
+parent_selection_type = "sss" # sss, rws, tournament, random
+mutation_type = None # random, swap, scramble, inversion
 sol_per_pop = CPU_count # assume each CPU can handle one population at a time
 parameters_name = ['t_silicon','radius','t_AlN','t_SiO2','electrode_ratio']
 upper_bound = [15,7000,3,2,0.8]
 lower_bound = [4,1000,0.5,0.5,0.2]   # make sure the alignment is correct
-step_values = [1,10,0.1,0.1,0.1] # set the discrete values for faster convergence
+step_values = [1,100,0.1,0.1,0.1] # set the discrete values for faster convergence
 
 # The section below is the parallelization of the optimization process
 # Since the load mph is quite time consuming, the model loading is done in the worker_init function
 # NOTICE: don't edit the parallization, Python is quite weak in supporting parallelization, so the code below is quite tricky
-logging.basicConfig(filename='COMSOL_exception.log', level=logging.ERROR, filemode='w')
+logging.basicConfig(filename='COMSOL_exception.log', level=logging.ERROR, filemode='w') # rewrite the log file each time, store all errors generate from COSMOL model
 pool = None
 
 def worker_init():
@@ -33,7 +37,7 @@ def worker_job(solution):
     try:
         model.update(solution)  # Update the model with the solution
         model.run_simulation()  # include build, mesh and solve 
-        FOM = model.get_disp_FOM_MidPoint()  # get the figure of merit
+        FOM = model.get_disp_FOM()  # get the figure of merit
     except Exception as e:
         print(f"Error for solution = {solution}") # print if the error occurs
         logging.error(f"Error for solution = {solution}. Error message = {e}")
@@ -48,12 +52,16 @@ def shutdown_pool():
         pool = None
     print("Process pool has been shut down.")
 
+# take care of the parallelization data return
 def fitness_func(ga_instance, solutions, solutions_idx):
     global pool
     print(f"Processing solutions = {solutions_idx}")
     if pool is None:
         initialize_pool()
-    fitness_values = pool.map(worker_job,solutions) # type: ignore #dynamically changing the type of the pool
+    # Create a dictionary with solution indices as keys and fitness values as values
+    fitness_dict = {idx: fom for idx, fom in zip(solutions_idx, pool.map(worker_job, solutions))} # type: ignore
+    # Sort the dictionary by keys (solution indices) and get the sorted fitness values
+    fitness_values = [fitness_dict[idx] for idx in sorted(fitness_dict.keys())]
     return fitness_values
 
 # on genration function shows the results for one generation
@@ -72,6 +80,10 @@ ga_instance = pygad.GA(num_generations=num_generations,
                        num_parents_mating=num_parents_mating,
                        fitness_batch_size=CPU_count,
                        fitness_func=fitness_func,
+                       mutation_num_genes=mutation_num_genes,
+                       crossover_type=crossover_type,
+                       mutation_type=mutation_type, # type: ignore
+                       parent_selection_type=parent_selection_type,
                        sol_per_pop=sol_per_pop,
                        num_genes=num_genes,
                        gene_space=gene_space,
@@ -89,9 +101,9 @@ if __name__ == '__main__':
     solution, solution_fitness, solution_idx = ga_instance.best_solution()
     print("Parameters of the best solution : {solution}".format(solution=solution))
     print("Fitness value of the best solution = {solution_fitness}".format(solution_fitness=solution_fitness))
-
-    solution_dict = dict(zip(parameters_name,solution))
-    with open('best_solution.json','w') as f:
-        json.dump({**solution_dict, 'fitness': solution_fitness}, f)
-
+    config = {"num_generations": num_generations, "num_parents_mating": num_parents_mating, "mutation_num_genes": mutation_num_genes, "crossover_type": crossover_type, "parent_selection_type": parent_selection_type, "sol_per_pop": sol_per_pop, "mutation_type": mutation_type, "CPU_count": CPU_count}
+    solution_dicts = [{"parameter": p, "upper_bound": u, "solution": s, "lower_bound": l, "step_value": v} for p, s, u, l, v in zip(parameters_name, solution, upper_bound, lower_bound, step_values)]
+    combined_dict = {**config, "solutions": solution_dicts, 'fitness': solution_fitness}
+    with open('configuration_and_solution.json','w') as f:
+        json.dump(combined_dict,f)
     shutdown_pool()
