@@ -3,6 +3,7 @@ import multiprocessing
 import comsol_interface 
 import json
 import logging 
+import matplotlib.pyplot as plt 
 
 # The section below is the definition of the optimization problem
 CPU_count = 24
@@ -37,7 +38,7 @@ def worker_job(solution):
     try:
         model.update(solution)  # Update the model with the solution
         model.run_simulation()  # include build, mesh and solve 
-        FOM = model.get_disp_FOM()  # get the figure of merit
+        FOM = model.get_current_FOM()  # get the figure of merit
     except Exception as e:
         print(f"Error for solution = {solution}") # print if the error occurs
         logging.error(f"Error for solution = {solution}. Error message = {e}")
@@ -66,12 +67,27 @@ def fitness_func(ga_instance, solutions, solutions_idx):
 
 # on genration function shows the results for one generation
 last_fitness = 0
+# create a list to store the fitness values
+all_fitness_over_time = []
+# set the range of x axis
+plt.xlim(0, num_generations)
+
 def on_generation(ga_instance):
     global last_fitness
     print(f"Generation = {ga_instance.generations_completed}")
     print(f"Fitness    = {ga_instance.best_solution(pop_fitness=ga_instance.last_generation_fitness)[1]}")
     print(f"Change     = {ga_instance.best_solution(pop_fitness=ga_instance.last_generation_fitness)[1] - last_fitness}")
     last_fitness = ga_instance.best_solution(pop_fitness=ga_instance.last_generation_fitness)[1]
+    all_fitness_over_time.append(ga_instance.last_generation_fitness)
+    # draw the fitness plot
+    for i, fitness_values in enumerate(all_fitness_over_time):
+        plt.plot([i]*len(fitness_values), fitness_values, 'bo')
+    plt.xlabel('Generation') 
+    plt.ylabel('Fitness')
+    plt.title('Fitness of all solution in each generation')
+    plt.draw()
+    plt.pause(0.5)
+
 
 gene_space = [{'low': lower_bound[i], 'high': upper_bound[i], 'step': step_values[i]} for i in range(len(upper_bound))]
 num_genes = len(upper_bound)
