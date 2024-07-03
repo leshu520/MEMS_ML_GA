@@ -4,15 +4,16 @@ import comsol_interface
 import json
 import logging 
 import matplotlib.pyplot as plt 
+import numpy as np
 
 # The section below is the definition of the optimization problem
 CPU_count = 24
 num_generations = 50
-num_parents_mating = 20
-mutation_num_genes = 0
+num_parents_mating = 4
+mutation_num_genes = 1
 crossover_type = "single_point" # single_point, two_points, uniform, scattered
 parent_selection_type = "sss" # sss, rws, tournament, random
-mutation_type = None # random, swap, scramble, inversion
+mutation_type = "random" # random, swap, scramble, inversion
 sol_per_pop = CPU_count # assume each CPU can handle one population at a time
 parameters_name = ['t_silicon','radius','t_AlN','t_SiO2','electrode_ratio']
 upper_bound = [15,7000,3,2,0.8]
@@ -29,16 +30,13 @@ def worker_init():
     global model 
     model = comsol_interface.Speaker_2D_ComsolInterface('2D_Piezoelectric_Microphone_for_GA_based_Optimization.mph')
 
-def initialize_pool():
-    global pool
-    pool = multiprocessing.Pool(processes=CPU_count, initializer=worker_init)
-    print("Process pool has been set up.")
-
 def worker_job(solution):
     try:
         model.update(solution)  # Update the model with the solution
         model.run_simulation()  # include build, mesh and solve 
-        FOM = model.get_current_FOM()  # get the figure of merit
+        FOM = model.get_current_FOM(selection=1)  # get the figure of merit
+        model.clear() # clear the model to save memory
+        model.reset() # reset the model to the initial state
     except Exception as e:
         print(f"Error for solution = {solution}") # print if the error occurs
         logging.error(f"Error for solution = {solution}. Error message = {e}")
@@ -55,14 +53,9 @@ def shutdown_pool():
 
 # take care of the parallelization data return
 def fitness_func(ga_instance, solutions, solutions_idx):
-    global pool
     print(f"Processing solutions = {solutions_idx}")
-    if pool is None:
-        initialize_pool()
-    # Create a dictionary with solution indices as keys and fitness values as values
-    fitness_dict = {idx: fom for idx, fom in zip(solutions_idx, pool.map(worker_job, solutions))} # type: ignore
-    # Sort the dictionary by keys (solution indices) and get the sorted fitness values
-    fitness_values = [fitness_dict[idx] for idx in sorted(fitness_dict.keys())]
+    pool = multiprocessing.Pool(processes=CPU_count, initializer=worker_init)
+    fitness_values = pool.map(worker_job, solutions)
     return fitness_values
 
 # on genration function shows the results for one generation
@@ -75,14 +68,15 @@ plt.xlim(0, num_generations)
 def on_generation(ga_instance):
     global last_fitness
     print(f"Generation = {ga_instance.generations_completed}")
-    print(f"Fitness    = {ga_instance.best_solution(pop_fitness=ga_instance.last_generation_fitness)[1]}")
+    print(f"Last Best Fitness  = {ga_instance.best_solution(pop_fitness=ga_instance.last_generation_fitness)[1]}")
+    print(f"Last Best Solution = {ga_instance.best_solution(pop_fitness=ga_instance.last_generation_fitness)[0]}")
     print(f"Change     = {ga_instance.best_solution(pop_fitness=ga_instance.last_generation_fitness)[1] - last_fitness}")
     last_fitness = ga_instance.best_solution(pop_fitness=ga_instance.last_generation_fitness)[1]
     all_fitness_over_time.append(ga_instance.last_generation_fitness)
     # draw the fitness plot
     for i, fitness_values in enumerate(all_fitness_over_time):
         plt.plot([i]*len(fitness_values), fitness_values, 'bo')
-    plt.xlabel('Generation') 
+    plt.xlabel('Generation')
     plt.ylabel('Fitness')
     plt.title('Fitness of all solution in each generation')
     plt.draw()
@@ -120,6 +114,8 @@ if __name__ == '__main__':
     config = {"num_generations": num_generations, "num_parents_mating": num_parents_mating, "mutation_num_genes": mutation_num_genes, "crossover_type": crossover_type, "parent_selection_type": parent_selection_type, "sol_per_pop": sol_per_pop, "mutation_type": mutation_type, "CPU_count": CPU_count}
     solution_dicts = [{"parameter": p, "upper_bound": u, "solution": s, "lower_bound": l, "step_value": v} for p, s, u, l, v in zip(parameters_name, solution, upper_bound, lower_bound, step_values)]
     combined_dict = {**config, "solutions": solution_dicts, 'fitness': solution_fitness}
+    
     with open('configuration_and_solution.json','w') as f:
         json.dump(combined_dict,f)
     shutdown_pool()
+    ga_instance.save("genetic") # save the model for later use
