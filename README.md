@@ -22,3 +22,6 @@ pip install pygad
 ```
 ## Genetic Algorithm Configuration
 The parameters `num_generations`, `num_parents_mating`, `mutation_type`, `mutation_num_genes`, `crossover_type`, `parent_selection_type` are all inherited from the [Pygad library](https://pygad.readthedocs.io/en/latest/pygad.html#pygad-ga-class). The constant `CPU_count` indicates how many clients will be created for each session, and `sol_per_pop` should be an integer multiple of `CPU_count` to achieve maximal efficiency.
+
+## COMSOL models
+The COMSOL models could be downloaded and access from [here](https://drive.google.com/drive/folders/15fIS-YFUNZt6R5zCq7ZsJvFv_ob1qcw5?usp=sharing) and put them to the root directionary of the code folder. 

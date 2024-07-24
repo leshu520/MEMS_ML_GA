@@ -1,0 +1,6 @@
+
+*.mph
+*.lock
+*.log
+/.vscode
+/__pycache__
