@@ -1,5 +1,5 @@
 # Optimize MEMS device geometry by using Genetic Algorithm
-Master Thesis of Alan Xu in MNS lab, ESAT, KU Leuven
+Master Thesis of Alan Xu in [MNS lab](https://www.esat.kuleuven.be/mns), ESAT, KU Leuven
 ## NOTICE! 
 1. The Python version from the Microsoft Store may not work correctly with this project. It is recommended to download Python from the [official Python website](https://www.python.org/downloads/). 
 ## Files
