@@ -7,29 +7,36 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 # The section below is the definition of the optimization problem
-CPU_count = 24
-num_generations = 50
-num_parents_mating = 4
+CPU_count = 12
+num_generations = 20
+num_parents_mating = 8
 mutation_num_genes = 1
 crossover_type = "single_point" # single_point, two_points, uniform, scattered
 parent_selection_type = "sss" # sss, rws, tournament, random
 mutation_type = "random" # random, swap, scramble, inversion
 sol_per_pop = CPU_count # assume each CPU can handle one population at a time
-Bezier_parameter_name = ['Bezier2phi','Bezier3phi','Bezier_weight'] # 1 is the phi of mid point and 2 is the phi of the membrane, 3 is the weight of the quadratic Bezier curve
-# Note: only polar coordinates are used in the Bezier curve (due to the constrain of the COMSOL), since the radius of memebrane has been included as one of the parameters. The only parameter we can play with is the phi, here the conversion of the polar system to the Cartesian system is introduced.
+Bezier_parameter_name = ['Bezier2phi','Bezier3phi','BezierWeight2'] # 1 is the phi of mid point and 2 is the phi of the membrane, 3 is the weight of the quadratic Bezier curve
+# Note: only polar coordinates are used in the Bezier curve (due to the constrain of the COMSOL), since the radius of membrane has been included as one of the parameters. The only parameter we can play with is the phi, here the conversion of the polar system to the Cartesian system is introduced.
 # we use the rad as the unit for the phi, the range of the phi is from 0 to pi/2 
-bezier_upper = [np.pi/3,np.pi/2,4]
+bezier_upper = [np.pi/3,np.pi/2,2]
 bezier_lower = [np.pi/6,0,0.5]
 bezier_step = [np.pi/16,np.pi/12,0.1]
 
-parameters_name = ['t_silicon','radius','t_AlN','t_SiO2','electrode_ratio'] + Bezier_parameter_name
-upper_bound = [15,7000,3,2,0.8] + bezier_upper
-lower_bound = [4,1000,0.5,0.5,0.2] + bezier_lower  # make sure the alignment is correct
-step_values = [1,100,0.1,0.1,0.1] + bezier_step # set the discrete values for faster convergence
+# add something that is necessary for the optimization
+parameters_name = Bezier_parameter_name
+upper_bound = bezier_upper
+lower_bound = bezier_lower
+step_values = bezier_step # set the discrete values for faster convergence
+'''
+parameters_name = ['t_silicon','radius','t_AlN','t_SiO2','electrode_ratio']
+upper_bound = [15,7000,3,2,0.8] 
+lower_bound = [4,1000,0.5,0.5,0.2] 
+step_values = [1,100,0.1,0.1,0.1] # set the discrete values for faster convergence
+'''
 
 # The section below is the parallelization of the optimization process
-# Since the load mph is quite time consuming, the model loading is done in the worker_init function
-# NOTICE: don't edit the parallization, Python is quite weak in supporting parallelization, so the code below is quite tricky
+# Since the load mph is quite time consuming, the model loading is done in the worker_init function (abandoned, the data will distorted)
+# NOTICE: don't edit the parallelization, Python is quite weak in supporting parallelization.
 logging.basicConfig(filename='COMSOL_exception.log', level=logging.ERROR, filemode='w') # rewrite the log file each time, store all errors generate from COSMOL model
 pool = None
 
@@ -65,7 +72,7 @@ def fitness_func(ga_instance, solutions, solutions_idx):
     fitness_values = pool.map(worker_job, solutions)
     return fitness_values
 
-# on genration function shows the results for one generation
+# on generation function shows the results for one generation
 last_fitness = 0
 # create a list to store the fitness values
 all_fitness_over_time = []
