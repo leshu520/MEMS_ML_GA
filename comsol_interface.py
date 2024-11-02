@@ -8,7 +8,7 @@ class ComsolInterface:
         try:
             self.model = self.client.load(model_path)
             self.model_path = model_path
-            print("Loaded model on", self.cores, "core(s):", self.client.models())
+            # print("Loaded model on", self.cores, "core(s):", self.client.models())
         except Exception as e:
             print("Error: Could not load the model.", e)
             exit()
@@ -61,7 +61,7 @@ class Speaker_2D_ComsolInterface(ComsolInterface):
         return mask
     
     def get_stress_FOM(self,selection=1):
-        (r,z,stress) = self.model.evaluate(['r','z','solid.mises_peak']) # need to compute the differential stress!!! just use solid.mises is not accurate enough, I didn't do
+        (r,z,stress) = self.model.evaluate(['r','z','solid.mises_peak']) # using peak value is not accurate 
         if selection == 1:
             mask = self.create_AlN_mask(r,z)
         elif selection == 2:
@@ -72,7 +72,7 @@ class Speaker_2D_ComsolInterface(ComsolInterface):
 
     def get_current_FOM(self,selection=1): # the all current of the ALN layer
         (r,z,current) = self.model.evaluate(['r','z','es.normJ']) # return unit is A/m^2
-        current_non_nan = np.nan_to_num(current, nan=0.0) # replace the nan with 0 since the current in some postion can't be correctly measured
+        current_non_nan = np.nan_to_num(current, nan=0.0)
         if selection == 1: 
             mask = self.create_AlN_mask(r,z) # Create the mask for the ALN
         elif selection == 2: 
@@ -110,40 +110,49 @@ class Speaker_3D_ComsolInterface(ComsolInterface):
     t_silicon = 12
     radius = 3200
     t_SiO2 = 0.7
-    r_electrode = 0.8 * radius
+    r_electrode = 0.7 * radius
     t_AlN = 0.5
 
     def update(self, solution): # store the values of the solution and update the model with the solution
-        # self.radius = solution[0]
         self.bezier = solution
-        self.set_parameter('radius',f'{self.radius}[um]')
-        # before inject the value to thse model, we need to convert the polar coordinates to the Cartesian coordinates  
-        self.bezier2x, self.bezier2y = self.polar_to_cartesian(self.radius/2 , self.bezier[0])
+        # before inject the values to the model, we need to convert the polar coordinates to the Cartesian coordinates
+        self.bezier2x, self.bezier2y = self.polar_to_cartesian(self.bezier[0], self.bezier[1])
         # 1.02 here is used to cast the Bezier curve to the outside of the membrane (at the edge may cause the division unfinished)
-        self.bezier3x, self.bezier3y = self.polar_to_cartesian(self.radius*1.02 , self.bezier[1])
+        self.bezier3x, self.bezier3y = self.polar_to_cartesian(self.radius*1.02 , self.bezier[2])
         self.set_parameter('Bezier2x',f'{self.bezier2x}[um]')
         self.set_parameter('Bezier2y',f'{self.bezier2y}[um]')
         self.set_parameter('Bezier3x',f'{self.bezier3x}[um]')
         self.set_parameter('Bezier3y',f'{self.bezier3y}[um]')
-        self.set_parameter('BezierWeight2',f'{self.bezier[2]}') # can add different weight for the Bezier 
+        self.set_parameter('BezierWeight1',f'{self.bezier[3]}')
+        self.set_parameter('BezierWeight2',f'{self.bezier[4]}')
+        self.set_parameter('BezierWeight3',f'{self.bezier[5]}')
         self.build()
         return self.model
 
+    # this method has severe issue, the solid.misesGp can't be used directly
     def get_stress_FOM(self):
         [x,y,z,stress] = self.model.evaluate(['x','y','z','solid.misesGp'])
         mask = self.create_AlN_mask(x*1e6,y*1e6,z*1e6) # need to work with the unit of the COMSOL model (default is m) and here is um
-        filtered_stress = stress[0:self.frequency_steps][mask]
+        filtered_stress = stress[mask]
         FOM = sum(filtered_stress)
         return FOM
+    
+    def get_charge_FOM(self):
+        [x,y,z,charge] = self.model.evaluate(['x','y','z','es.normD'])
+        mask = self.create_AlN_mask(x*1e6,y*1e6,z*1e6)
+        charge_non_nan = np.nan_to_num(charge, nan=0.0)                             
+        filtered_charge = charge_non_nan[mask]
+        FOM = sum(filtered_charge)
+        return FOM 
     
         # create the 3D mask is bit tricky, convert to the polar coordinates.  
     def create_AlN_mask(self,x,y,z):
         r_min, r_max = 0, self.r_electrode # generate the min and max radius of the ALN
         z_min, z_max = self.t_silicon + self.t_SiO2, self.t_silicon + self.t_SiO2 + self.t_AlN # generate the min and max height of the AlN
         r = self.cartesian_to_polar(x,y)
-        mask = (r[0:self.frequency_steps] >= r_min) & (r[0:self.frequency_steps] <= r_max) & (z[0:self.frequency_steps] >= z_min) & (z[0:self.frequency_steps] <= z_max)
+        mask = (r >= r_min) & (r <= r_max) & (z >= z_min) & (z <= z_max)
         return mask
-    
+
     # conversion based on the numpy library, use rad as the unit for the phi 
     def polar_to_cartesian(self,r,phi):
         x = r * np.cos(phi)
@@ -153,9 +162,19 @@ class Speaker_3D_ComsolInterface(ComsolInterface):
     def cartesian_to_polar(self,x,y):
         r = np.sqrt(x**2 + y**2)
         return r
-            
+
+class Speaker_3D_ComsolInterface_xMEMS(ComsolInterface): # the membrane is square here, previous class is not suitable for this model
+    edge_length = 1000 # the edge length of the square membrane
+    t_silicon = 12
+    t_SiO2 = 0.7
+    t_AlN = 0.5
+
+    def update(self, solution): # store the values of the solution and update the model with the solution
+        self.bezier = solution 
+
+
 # test code for the data read and set functions, useful debug tool
-# 1 for the multiple simulation, 2 for the single simulation, 3 for the 3D simulation
+# 1 for the multiple simulation, 2 for the single simulation, 3 for the 3D simulation, 4 to test the bassline model
 if __name__ == '__main__':
     selection_multiple = 3
     if (selection_multiple==1):
@@ -172,14 +191,28 @@ if __name__ == '__main__':
         solution = [11,3200,0.6,1.9,0.7]
         model.update(solution)
         model.run_simulation()
-        print(model.get_current_FOM(selection=1))
+        print(model.get_charge_FOM(selection=1))   
         model.clear()
         model.reset()
     elif (selection_multiple==3):
         model = Speaker_3D_ComsolInterface('3D_Piezoelectric_Microphone_for_GA_based_Optimization.mph',cores=24)
-        solution = [0.844,1.333,0.707]
+        solution = [2.60000000e+03, 1.22173048e+00, 1.30899694e+00, 4.60000000e+00, 3.40000000e+00, 1.70000000e+00]
+        model.update(solution)  
+        print(f"2x and 2y are:", model.polar_to_cartesian(solution[0],solution[1]))
+        print(f"3x and 3y are:", model.polar_to_cartesian(model.radius,solution[2]))
         model.update(solution)
+        model.model.save()
+        for i in range(30):
+            try:
+                model.run_simulation()
+                print(model.get_charge_FOM())
+            except Exception as e: 
+                print(f"Error in processing solution")
+            model.clear()
+            model.reset()
+    elif (selection_multiple==4):
+        model = Speaker_3D_ComsolInterface('3D_Piezoelectric_Microphone_for_GA_based_Optimization - original.mph',cores=24)
         model.run_simulation()
-        print(model.get_stress_FOM())
+        print(model.get_charge_FOM())
         model.clear()
         model.reset()
