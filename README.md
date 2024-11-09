@@ -28,9 +28,12 @@ The COMSOL models could be downloaded and access from [here](https://drive.googl
 ## Existing issue
 1. ```python
    (r,z,current) = self.model.evaluate(['r','z','es.normJ'])
+   ```
 
-This line of the code is for outputting the value from COMSOL. The $r$, $z$ and current values are one-to-one-mapping from the method evaluation. Therefore, I created a mask (Boolean matrix) on the wanted $r$ and $z$ and then do component-wise multiplication on the current value matrix. The ```evaluate()``` is inherited from [Mph](https://mph.readthedocs.io/en/stable/_modules/mph/model.html#Model.evaluate), and I don't find the way to obtain pre-defined 'Plot' in COMSOL. However, the direct import data from the 'Dataset' in COMSOL with complicated data addressing is not efficient and straightforward. Also, this will hugely increase the workload on manipulating the data. If possible, please refer to the [Manual](https://doc.comsol.com/5.4/doc/com.comsol.help.comsol/COMSOL_ProgrammingReferenceManual.pdf).
-2. ```python
-   charge = self.model.evaluate('es.normD')
+This line of the code is for outputting the value from COMSOL. The r, z and current values are one-to-one-mapping from the method evaluation. Therefore, I created a mask (Boolean matrix) on the wanted r and z and then do component-wise multiplication on the current value matrix. The `evaluate()` is inherited from [Mph](https://mph.readthedocs.io/en/stable/_modules/mph/model.html#Model.evaluate), and I don't find the way to obtain pre-defined 'Plot' in COMSOL. However, the direct import data from the 'Dataset' in COMSOL with complicated data addressing is not efficient and straightforward. Also, this will hugely increase the workload on manipulating the data. If possible, please refer to the [Manual](https://doc.comsol.com/5.4/doc/com.comsol.help.comsol/COMSOL_ProgrammingReferenceManual.pdf). 
 
-norm.D can't be evaluate from the COMSOL. This is a bug caused by the COMSOL programming. Avoid evaluating charge density until is bug has been fixed. 
+2. ```python 
+	charge = self.model.evaluate('es.normD')
+	```
+
+norm.D can't be evaluate from the COMSOL. This is a bug caused by the COMSOL programming. Avoid evaluating charge density until is bug has been fixed.
