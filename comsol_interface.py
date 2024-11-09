@@ -1,5 +1,6 @@
 import mph
 import numpy as np
+import time 
 
 class ComsolInterface:
     def __init__(self, model_path, cores=1):
@@ -196,12 +197,13 @@ if __name__ == '__main__':
         model.reset()
     elif (selection_multiple==3):
         model = Speaker_3D_ComsolInterface('3D_Piezoelectric_Microphone_for_GA_based_Optimization.mph',cores=24)
-        solution = [2.60000000e+03, 1.22173048e+00, 1.30899694e+00, 4.60000000e+00, 3.40000000e+00, 1.70000000e+00]
+        solution = (1.50000000e+03,0.00000000e+00,3.92699082e-01,1.40000000e+00,3.80000000e+00,2.00000000e-01)
         model.update(solution)  
         print(f"2x and 2y are:", model.polar_to_cartesian(solution[0],solution[1]))
         print(f"3x and 3y are:", model.polar_to_cartesian(model.radius,solution[2]))
         model.update(solution)
         model.model.save()
+        start_time = time.time()
         for i in range(30):
             try:
                 model.run_simulation()
@@ -210,6 +212,9 @@ if __name__ == '__main__':
                 print(f"Error in processing solution")
             model.clear()
             model.reset()
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        print(f"Elapsed time = {elapsed_time}")
     elif (selection_multiple==4):
         model = Speaker_3D_ComsolInterface('3D_Piezoelectric_Microphone_for_GA_based_Optimization - original.mph',cores=24)
         model.run_simulation()
