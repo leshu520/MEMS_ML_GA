@@ -1,4 +1,3 @@
-from matplotlib.font_manager import FontManager
 import mph
 import numpy as np
 import time 
@@ -6,6 +5,7 @@ import time
 class ComsolInterface:
     def __init__(self, model_path, cores=1):
         self.client = mph.start(cores=cores) 
+        self.cores = cores
         try:
             self.model = self.client.load(model_path)
             self.model_path = model_path
@@ -130,6 +130,18 @@ class Speaker_3D_ComsolInterface(ComsolInterface):
         self.build()
         return self.model
 
+    def smart_update(self,solution):
+        self.bezier = solution
+        self.bezier2x, self.bezier2y = self.polar_to_cartesian(self.bezier[0], self.bezier[1])
+        self.set_parameter('Bezier2x',f'{self.bezier2x}[um]')
+        self.set_parameter('Bezier2y',f'{self.bezier2y}[um]')
+        self.set_parameter('BezierWeight1',f'{self.bezier[2]}')
+        self.set_parameter('BezierWeight2',f'{self.bezier[3]}')
+        self.set_parameter('BezierWeight3',f'{self.bezier[4]}')
+        self.set_parameter('Bezier1x',f'{self.bezier[5]}[um]')
+        self.build()
+        return self.model 
+
     # this method has severe issue, the solid.misesGp can't be used directly
     def get_stress_FOM(self):
         [x,y,z,stress] = self.model.evaluate(['x','y','z','solid.misesGp'])
@@ -153,7 +165,20 @@ class Speaker_3D_ComsolInterface(ComsolInterface):
         r = self.cartesian_to_polar(x,y)
         mask = (r >= r_min) & (r <= r_max) & (z >= z_min) & (z <= z_max)
         return mask
-
+    
+    def create_top_mask(self,x,y,z):
+        z_min, z_max = self.t_silicon + self.t_SiO2, self.t_silicon + self.t_SiO2 + self.t_AlN # generate the min and max height of the AlN
+        mask = (z > z_min) & (z < z_max)
+        return mask
+    
+    def get_charge_FOM_faster(self):
+        [z,charge] = self.model.evaluate(['z','es.normD'])
+        mask = self.create_top_mask(z*1e6)
+        charge_non_nan = np.nan_to_num(charge, nan=0.0)  
+        filtered_charge = charge_non_nan[mask]
+        FOM = sum(filtered_charge)
+        return FOM
+    
     # conversion based on the numpy library, use rad as the unit for the phi 
     def polar_to_cartesian(self,r,phi):
         x = r * np.cos(phi)
@@ -164,46 +189,11 @@ class Speaker_3D_ComsolInterface(ComsolInterface):
         r = np.sqrt(x**2 + y**2)
         return r
 
-class Speaker_3D_ComsolInterface_xMEMS(ComsolInterface): # the membrane is square here, previous class may not suitable for this model
-    length = 2000 # the edge length of the square membrane
-    t_silicon = 12
-    t_SiO2 = 0.7
-    t_AlN = 0.5
-    # the method can't be inherited from the parent class. Every functions should be redefined here.
-    def update(self, solution): 
-        self.pos_A_x = solution[0] 
-        self.pos_A_y = solution[1]
-        self.arc_radius = solution[2]
-        self.mid_circle = solution[3]
-        self.set_parameter('pos_A_x',f'{self.pos_A_x}[um]')
-        self.set_parameter('pos_A_y',f'{self.pos_A_y}[um]')
-        self.set_parameter('arc_radius',f'{self.arc_radius}[um]')
-        self.set_parameter('mid_circle',f'{self.mid_circle}[um]')
-        self.build()
-        return self.model
-
-    def get_charge_FOM(self): # using probe is much better, but here still use the old technique
-        [x,y,z,charge] = self.model.evaluate(['x','y','z','es.normD'])
-        mask = self.create_AlN_mask(x*1e6,y*1e6,z*1e6)
-        charge_non_nan = np.nan_to_num(charge, nan=0.0) 
-        filtered_charge = charge_non_nan[mask]
-        FOM = sum(filtered_charge)
-        return FOM
-    
-    def get_disp_FOM(self):
-        displacement = self.model.evaluate('solid.disp','mm')
-        FOM = sum(sum(sublist) for sublist in displacement)
-        return FOM
-    
-    def create_AlN_mask(self,x,y,z): 
-        z_min, z_max = self.t_silicon + self.t_SiO2, self.t_silicon + self.t_SiO2 + self.t_AlN # generate the min and max height of the AlN
-        mask = (z >= z_min) & (y <= self.pos_A_y) & (y - (self.pos_A_y/self.pos_A_x*x) <= 0) & ((self.length-self.pos_A_y/2) >= x)
-        return mask
 
 # test code for the data read and set functions, useful debug tool
 # 1 for the multiple simulation, 2 for the single simulation, 3 for the 3D simulation, 4 to test the bassline model
 if __name__ == '__main__':
-    selection_multiple = 5
+    selection_multiple = 3
     if (selection_multiple==1):
         model = Speaker_2D_ComsolInterface('2D_Piezoelectric_Microphone_for_GA_based_Optimization.mph',cores=24)
         solution = np.loadtxt('solution_6.txt')
@@ -222,12 +212,10 @@ if __name__ == '__main__':
         model.clear()
         model.reset()
     elif (selection_multiple==3):
-        model = Speaker_3D_ComsolInterface('3D_Piezoelectric_Microphone_for_GA_based_Optimization.mph',cores=24)
-        solution = (1.50000000e+03,0.00000000e+00,3.92699082e-01,1.40000000e+00,3.80000000e+00,2.00000000e-01)
-        model.update(solution)  
+        model = Speaker_3D_ComsolInterface('3D_Piezoelectric_Microphone_for_GA_based_Optimization_shida.mph',cores=24)
+        solution = (2600,1.439,0.4,0.8,0.8)
+        model.smart_update(solution)  
         print(f"2x and 2y are:", model.polar_to_cartesian(solution[0],solution[1]))
-        print(f"3x and 3y are:", model.polar_to_cartesian(model.radius,solution[2]))
-        model.update(solution)
         model.model.save()
         start_time = time.time()
         for i in range(30):
@@ -241,22 +229,11 @@ if __name__ == '__main__':
         end_time = time.time()
         elapsed_time = end_time - start_time
         print(f"Elapsed time = {elapsed_time}")
+        # 10408 seconds
     elif (selection_multiple==4):
-        model = Speaker_3D_ComsolInterface('3D_Piezoelectric_Microphone_for_GA_based_Optimization - original.mph',cores=24)
+        model = Speaker_3D_ComsolInterface('3D_Piezoelectric_Microphone_for_GA_based_Optimization_shida.mph',cores=24)
         model.run_simulation()
         print(model.get_charge_FOM())
         model.clear()
         model.reset()
-    elif (selection_multiple==5):
-        solution = [1150,520,213,130]
-        start_time = time.time()
-        for i in range(35):
-            model = Speaker_3D_ComsolInterface_xMEMS('3D_Piezoelectric_Microphone_for_GA_based_Optimization_xMEMS.mph',cores=24)
-            model.update(solution)
-            model.run_simulation()
-            print(model.get_charge_FOM())
-            model.clear()
-            model.reset()
-        end_time = time.time()
-        elapsed_time = end_time - start_time
-        print(f"Elapsed time = {elapsed_time}")
+        

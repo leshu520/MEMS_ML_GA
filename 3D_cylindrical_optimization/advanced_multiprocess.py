@@ -6,22 +6,23 @@ from queue import Empty
 import time
 import comsol_interface
 
+# global variable
+workers = 8 # number of workers to hire, the value should be determined by calculating the memory usage for each worker. 
+cores = cpu_count() // workers
 def worker(jobs, results):
     """Performs jobs and delivers the results."""
-    model = comsol_interface.Speaker_3D_ComsolInterface_xMEMS('3D_Piezoelectric_Microphone_for_GA_based_Optimization_xMEMS.mph')
+    model = comsol_interface.Speaker_3D_ComsolInterface('3D_Piezoelectric_Microphone_for_GA_based_Optimization_shida.mph',cores=cores)
     while True:
         try:
             solution = jobs.get(block=False)
             # print(f"Processing solution")
         except Empty:
             break
-
-        try:
-            model.update(solution)
+        try:  
+            model.smart_update(solution)
             model.run_simulation()
             FOM = model.get_charge_FOM()
-        except Exception as e:
-            print(f"Error for solution = {solution}")
+        except Exception as e: 
             print(f"Error message = {e}")
             FOM = 0
         model.clear()
@@ -36,7 +37,6 @@ def boss(solutions):
 
     results = Queue()
     processes = []
-    workers = 24  # number of workers to hire, the value should be determined by calculating the memory usage for each worker. 
     # workers = cpu_count() # if the memory usage is not the bottleneck, you can use the number of logical cores
     for n in range(workers):
         process = Process(target=worker, args=(jobs, results))
@@ -56,8 +56,8 @@ def boss(solutions):
 
 
 if __name__ == '__main__':
-    solution = [1300,650,260,130]
-    solutions = [solution] * 40
+    solution = (2.40000000e+03,3.27249235e-01,3.27249235e-01,4.40000000e+00,3.80000000e+00,2.00000000)
+    solutions = [solution] * 30
     start_time = time.time()
     FOMs = boss(solutions)
     end_time = time.time()

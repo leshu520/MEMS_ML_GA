@@ -5,25 +5,38 @@ import json
 import logging 
 import matplotlib.pyplot as plt  
 from numpy import pi
-from scipy.io import savemat
+from numpy import save
 import advanced_multiprocess
 
-
 # The section below is the definition of the optimization problem
-CPU_count = 24
+# CPU_count = 16
 num_generations = 50
 num_parents_mating = 4
 mutation_num_genes = 1
 crossover_type = "single_point" # single_point, two_points, uniform, scattered
 parent_selection_type = "sss" # sss, rws, tournament, random
 mutation_type = "random" # random, swap, scramble, inversion
-sol_per_pop = 40 # assume each CPU can handle one population at a time, but if advanced multiprocessing is used, then sol_per_pop can be set to optimal value. 
+sol_per_pop = 20 # assume each CPU can handle one population at a time, but if advanced multiprocessing is used, then sol_per_pop can be set to optimal value. 
+Bezier_parameter_name = ['Bezier2r','Bezier2phi','BezierWeight1','BezierWeight2','BezierWeight3','Bezier1r'] # the weight of the quadratic Bezier curve
+# Note: only polar coordinates are used in the Bezier curve (due to the constrain of the COMSOL)
+# Due to the relative position of the curve points, change three points is exactly the same as changing two points. 
+# we use the rad as the unit for the phi, the range of the phi is from 0 to pi/2
+# the Beizer weight need to be normalized
+bezier_upper = [3000,pi/2,1,1,1,300]
+bezier_lower = [400,0,0.1,0.1,0.1,100]
+bezier_step = [80,pi/48,0.1,0.1,0.1,5]
 
-parameters_name = ['pos_A_x','pos_A_y','arc_radius','mid_circle'] # didn't use the bezier curve, so there are less parameters
-upper_bound = [1200,550,222,140]
-lower_bound = [1000,500,212,130]
-step_values = [4,1,0.5,0.5]
-
+# add something that is necessary for the optimization
+parameters_name = Bezier_parameter_name
+upper_bound = bezier_upper
+lower_bound = bezier_lower
+step_values = bezier_step # set the discrete values for faster convergence
+'''
+parameters_name = ['t_silicon','radius','t_AlN','t_SiO2','electrode_ratio']
+upper_bound = [15,7000,3,2,0.8] 
+lower_bound = [4,1000,0.5,0.5,0.2] 
+step_values = [1,100,0.1,0.1,0.1] # set the discrete values for faster convergence
+'''
 # logging configuration 
 level = logging.DEBUG
 name = 'logfile.txt'
@@ -44,16 +57,17 @@ console_handler.setFormatter(console_format)
 logger.addHandler(console_handler)
 # The section below is the parallelization of the optimization process
 # Since the load mph is quite time consuming, the model loading is done in the worker_init function (abandoned, the data will distorted even with the clear() called). I don't know why, but this is ridiculous.  
-# NOTICE: don't edit the parallelization model, Python is quite weak in supporting parallelization. There are two methods I tried here. 
+# NOTICE: don't edit the parallelization, Python is quite weak in supporting parallelization.
+# logging.basicConfig(filename='COMSOL_exception.log', level=logging.ERROR, filemode='w') # rewrite the log file each time, store all errors generate from COSMOL model
 pool = None
 
 def worker_init():
     global model 
-    model = comsol_interface.Speaker_3D_ComsolInterface('3D_Piezoelectric_Microphone_for_GA_based_Optimization.mph')
+    model = comsol_interface.Speaker_3D_ComsolInterface('3D_Piezoelectric_Microphone_for_GA_based_Optimization_shida.mph',2)
 
 def worker_job(solution):
     # arc on the left is the same as the arc on the right, so we only need to optimize the left arc
-    if solution[1] >= solution[2]: # create a non-linear constrains 
+    if solution[1] > solution[2]: # create a non-linear constrain to avoid the unexpected connection on slits.
         FOM = 0
     else:
         try:
@@ -84,8 +98,7 @@ def shutdown_pool():
 # take care of the parallelization data return
 def fitness_func(ga_instance, solutions, solutions_idx):
     print(f"Processing solutions = {solutions_idx}")
-    # enable the basic parallelization by uncommenting the following line
-    # pool = multiprocessing.Pool(processes=CPU_count, initializer=worker_init)
+    # pool = multiprocessing.Pool(processes=sol_per_pop, initializer=worker_init)
     # fitness_values = pool.map(worker_job, solutions)
     # enable the advanced multiprocessing by uncommenting the following line
     fitness_values = advanced_multiprocess.boss(solutions)
@@ -95,7 +108,6 @@ def fitness_func(ga_instance, solutions, solutions_idx):
 last_fitness = 0
 # create a list to store the fitness values
 all_fitness_over_time = []
-all_solutions_over_time = []
 # set the range of x axis
 
 plt.xlim(0, num_generations)
@@ -109,22 +121,21 @@ def on_generation(ga_instance):
     ga_instance.logger.info(f"Change     = {ga_instance.best_solution(pop_fitness=ga_instance.last_generation_fitness)[1] - last_fitness}")
     last_fitness = ga_instance.best_solution(pop_fitness=ga_instance.last_generation_fitness)[1]
     all_fitness_over_time.append(ga_instance.last_generation_fitness)
-    all_solutions_over_time.append(ga_instance.population)
     # draw the fitness plot
     # some memory and multiprocessing issues may occur (pretty random), so we need to use try-except to avoid the program from crashing
     try:
         for i, fitness_values in enumerate(all_fitness_over_time):
             plt.plot([i]*len(fitness_values), fitness_values, 'bo')
         plt.draw()
-        plt.pause(5)  # Pause briefly to allow the figure to update
+        plt.pause(2)  # Pause briefly to allow the figure to update
     except Exception as e:
         print(f"Error in plotting the fitness plot. Error message = {e}")
     if ga_instance.generations_completed == ga_instance.num_generations:
-        savemat('fitness.mat',{'fitness': all_fitness_over_time,'solutions': all_solutions_over_time})
         plt.xlabel('Number of Generations')
         plt.ylabel('Fitness')
         plt.title('Fitness values v.s. every generation')
         plt.savefig('fitness_plot.png')
+        save('all_fitness.npy', all_fitness_over_time)
 
 gene_space = [{'low': lower_bound[i], 'high': upper_bound[i], 'step': step_values[i]} for i in range(len(upper_bound))]
 num_genes = len(upper_bound)
@@ -158,7 +169,7 @@ if __name__ == '__main__':
     solution, solution_fitness, solution_idx = ga_instance.best_solution()
     print("Parameters of the best solution : {solution}".format(solution=solution))
     print("Fitness value of the best solution = {solution_fitness}".format(solution_fitness=solution_fitness))
-    config = {"num_generations": num_generations, "num_parents_mating": num_parents_mating, "mutation_num_genes": mutation_num_genes, "crossover_type": crossover_type, "parent_selection_type": parent_selection_type, "sol_per_pop": sol_per_pop, "mutation_type": mutation_type, "CPU_count": CPU_count}
+    config = {"num_generations": num_generations, "num_parents_mating": num_parents_mating, "mutation_num_genes": mutation_num_genes, "crossover_type": crossover_type, "parent_selection_type": parent_selection_type, "sol_per_pop": sol_per_pop, "mutation_type": mutation_type}
     solution_dicts = [{"parameter": p, "upper_bound": u, "solution": s, "lower_bound": l, "step_value": v} for p, s, u, l, v in zip(parameters_name, solution, upper_bound, lower_bound, step_values)]
     combined_dict = {**config, "solutions": solution_dicts, 'fitness': solution_fitness}
     
